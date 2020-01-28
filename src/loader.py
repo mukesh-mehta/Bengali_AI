@@ -26,4 +26,4 @@ class DataLoader(data.Dataset):
         if self.is_test is True:
             return image
         else:
-            return image, file_id[1]
+            return image, file_id[1], file_id[2], file_id[3]
