@@ -19,6 +19,7 @@ def set_parameter_requires_grad(model, feature_extracting):
 def initialize_model(model_name, num_classes, feature_extract, use_pretrained=True):
     # Initialize these variables which will be set in this if statement. Each of these
     #   variables is model specific.
+    print("Loading {} model.".format(model_name))
     model_ft = None
     model_ft = pretrained_models[model_name](pretrained=use_pretrained)
     set_parameter_requires_grad(model_ft, feature_extract)

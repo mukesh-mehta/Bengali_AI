@@ -19,7 +19,7 @@ class ImageLoader(data.Dataset):
         if index not in range(0, self.image_df.shape[0]):
             return self.__getitem__(np.random.randint(0, self.__len__()))
 
-        image = self.image_df.iloc[index].values[1:].reshape(-1, 137, 236).astype(int)
+        image = np.repeat(self.image_df.iloc[index].values[1:].reshape(-1, 137, 236).astype(int), 3, 0)
         if self.transform:
             image = self.transform(image)
         if self.is_test is True:
