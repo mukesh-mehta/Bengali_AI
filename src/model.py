@@ -1,5 +1,6 @@
 from torchvision import models
 from torch import nn
+import torch
 
 pretrained_models = {'resnet18': models.resnet18,
                      'resnet34': models.resnet34,
@@ -23,6 +24,7 @@ def initialize_model(model_name, num_classes, feature_extract, use_pretrained=Tr
     model_ft = None
     model_ft = pretrained_models[model_name](pretrained=use_pretrained)
     set_parameter_requires_grad(model_ft, feature_extract)
+    # model_ft.conv1 = torch.nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
     num_ftrs = model_ft.fc.in_features
     model_ft.fc = nn.Linear(num_ftrs, num_classes)
     return model_ft
