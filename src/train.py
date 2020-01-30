@@ -30,6 +30,7 @@ def train(parque_file_path,
     for epoch in range(epochs):
         loss=0
         for img, labels in tqdm(loader):
+            optimizer.zero_grad()
             img = img.type(torch.FloatTensor).permute(0, 2, 3, 1).to(device)
             labels = labels.type(torch.LongTensor).to(device)
             pred = model(img)
@@ -53,4 +54,4 @@ def train(parque_file_path,
 
 # def evaluate(loader, model, loss_func, device, checkpoint=None, weights=None): grapheme_root    vowel_diacritic consonant_diacritic
 train(["../data/bengaliai-cv19/train_image_data_{}.parquet".format(i) for i in range(4)],
-      "../data/bengaliai-cv19/train.csv","resnext50_32x4d", '../', 'cuda')
+      "../data/bengaliai-cv19/train.csv","resnet34", '../', 'cpu')
