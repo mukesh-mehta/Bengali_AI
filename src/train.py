@@ -1,12 +1,13 @@
 import torch
 import time
 import pandas as pd
+from utils import log_writer
 from torch import nn
 from tqdm import tqdm
 from loader import ImageLoader
 from model import initialize_model
 from torch.utils.tensorboard import SummaryWriter
-from sklearn.utils.class_weight import compute_class_weight
+from sklearn.model_selection import train_test_split
 
 n_grapheme = 168
 n_vowel = 11
@@ -24,10 +25,6 @@ def train(parque_file_path,
     image_df = pd.concat([pd.read_parquet(parque_file) for parque_file in parque_file_path])
     loader = torch.utils.data.DataLoader(ImageLoader(labels_df, image_df), batch_size=batch_size, shuffle=True, num_workers=8)
     model = initialize_model(model_name, n_grapheme+n_vowel+n_consonant, True).to(device)
-
-    vowel_weight = torch.FloatTensor(compute_class_weight('balanced', list(set(labels_df['vowel_diacritic'].values)), labels_df['vowel_diacritic'].values)).to(device)
-    grapheme_weight = torch.FloatTensor(compute_class_weight('balanced', list(set(labels_df['grapheme_root'].values)), labels_df['grapheme_root'].values)).to(device)
-    consonant_weight = torch.FloatTensor(compute_class_weight('balanced', list(set(labels_df['consonant_diacritic'].values)), labels_df['consonant_diacritic'].values)).to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     # criterion =  nn.CrossEntropyLoss()
