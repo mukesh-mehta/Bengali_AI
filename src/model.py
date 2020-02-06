@@ -2,35 +2,149 @@ from torchvision import models
 from torch import nn
 import torch
 
-pretrained_models = {'resnet18': models.resnet18,
-                     'resnet34': models.resnet34,
-                     'resnet50': models.resnet50,
-                     'resnet101': models.resnet101,
-                     'resnet152': models.resnet152,
-                     'resnext50_32x4d': models.resnext50_32x4d,
-                     'resnext101_32x8d': models.resnext101_32x8d}
+# implement mish activation function
+def f_mish(input):
+    '''
+    Applies the mish function element-wise:
+    mish(x) = x * tanh(softplus(x)) = x * tanh(ln(1 + exp(x)))
+    '''
+    return input * torch.tanh(F.softplus(input))
+
+# implement class wrapper for mish activation function
+class mish(nn.Module):
+    '''
+    Applies the mish function element-wise:
+    mish(x) = x * tanh(softplus(x)) = x * tanh(ln(1 + exp(x)))
+    '''
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, input):
+        return f_mish(input)
 
 
-def set_parameter_requires_grad(model, feature_extracting):
-    if feature_extracting:
-        for param in model.parameters():
-            param.requires_grad = False
+def f_swish(input):
+    '''
+    Applies the swish function element-wise:
+    swish(x) = x * sigmoid(x)
+    '''
+    return input * torch.sigmoid(input)
+
+# implement class wrapper for swish activation function
+class swish(nn.Module):
+    '''
+    Applies the swish function element-wise:
+    swish(x) = x * sigmoid(x)
+    '''
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, input):
+        return f_swish(input)
 
 
-def initialize_model(model_name, num_classes, feature_extract, use_pretrained=True):
-    # Initialize these variables which will be set in this if statement. Each of these
-    #   variables is model specific.
-    print("Loading {} model.".format(model_name))
-    model_ft = None
-    model_ft = pretrained_models[model_name](pretrained=use_pretrained)
-    set_parameter_requires_grad(model_ft, feature_extract)
-    # model_ft.conv1 = torch.nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
-    num_ftrs = model_ft.fc.in_features
-    model_ft.fc = nn.Linear(num_ftrs, num_classes)
-    return model_ft
+class LinearBottleNeck(nn.Module):
 
-if __name__ == '__main__':
-    # Initialize the model for this run
-    model = initialize_model("resnet18", 10, "True", use_pretrained=True)
-    # Print the model we just instantiated
-    print(model)
+    def __init__(self, in_channels, out_channels, stride, t=6, class_num=10, activation = 'relu'):
+        super().__init__()
+        
+        if activation == 'relu':
+            f_activation = nn.ReLU6(inplace=True)
+            
+        if activation == 'swish':
+            f_activation = swish()
+            
+        if activation == 'mish':
+            f_activation = mish()
+
+        self.residual = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels * t, 1),
+            nn.BatchNorm2d(in_channels * t),
+            f_activation,
+
+            nn.Conv2d(in_channels * t, in_channels * t, 3, stride=stride, padding=1, groups=in_channels * t),
+            nn.BatchNorm2d(in_channels * t),
+            f_activation,
+
+            nn.Conv2d(in_channels * t, out_channels, 1),
+            nn.BatchNorm2d(out_channels)
+        )
+
+        self.stride = stride
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+    
+    def forward(self, x):
+
+        residual = self.residual(x)
+
+        if self.stride == 1 and self.in_channels == self.out_channels:
+            residual += x
+        
+        return residual
+    
+class MobileNetV2(nn.Module):
+
+    def __init__(self, class_num=10, activation = 'relu'):
+        super().__init__()
+        
+        if activation == 'relu':
+            f_activation = nn.ReLU6(inplace=True)
+            
+        if activation == 'swish':
+            f_activation = swish()
+            
+        if activation == 'mish':
+            f_activation = mish()
+
+        self.pre = nn.Sequential(
+            nn.Conv2d(1, 32, 1, padding=1),
+            nn.BatchNorm2d(32),
+            f_activation
+        )
+
+        self.stage1 = LinearBottleNeck(32, 16, 1, 1, activation = activation)
+        self.stage2 = self._make_stage(2, 16, 24, 2, 6, activation = activation)
+        self.stage3 = self._make_stage(3, 24, 32, 2, 6, activation = activation)
+        self.stage4 = self._make_stage(4, 32, 64, 2, 6, activation = activation)
+        self.stage5 = self._make_stage(3, 64, 96, 1, 6, activation = activation)
+        self.stage6 = self._make_stage(3, 96, 160, 1, 6, activation = activation)
+        self.stage7 = LinearBottleNeck(160, 320, 1, 6, activation = activation)
+
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(320, 1280, 1),
+            nn.BatchNorm2d(1280),
+            f_activation
+        )
+
+        self.conv2 = nn.Conv2d(1280, class_num, 1)
+        
+    def forward(self, x):
+        x = self.pre(x)
+        x = self.stage1(x)
+        x = self.stage2(x)
+        x = self.stage3(x)
+        x = self.stage4(x)
+        x = self.stage5(x)
+        x = self.stage6(x)
+        x = self.stage7(x)
+        x = self.conv1(x)
+        x = F.adaptive_avg_pool2d(x, 1)
+        x = self.conv2(x)
+        x = x.view(x.size(0), -1)
+
+        return x
+    
+    def _make_stage(self, repeat, in_channels, out_channels, stride, t, activation = 'relu'):
+
+        layers = []
+        layers.append(LinearBottleNeck(in_channels, out_channels, stride, t, activation = activation))
+        
+        while repeat - 1:
+            layers.append(LinearBottleNeck(out_channels, out_channels, 1, t, activation = activation))
+            repeat -= 1
+        
+        return nn.Sequential(*layers)
+
+def mobilenetv2(activation = 'relu'):
+    return MobileNetV2(class_num = 1000, activation = activation)
