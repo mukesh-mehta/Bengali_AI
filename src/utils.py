@@ -1,4 +1,5 @@
 import torch
+from torch import nn
 
 def log_writer(writer, logs, step):
     for key, val in logs.items():
