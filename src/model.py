@@ -109,7 +109,7 @@ class SEBottleneck(nn.Module):
         self.bn3 = norm_layer(planes * self.expansion)
         self.relu = nn.ReLU(inplace=True)
         #  SE
-        self.selayer = SELayer(planes* self.expansion, reduction)
+        self.se = SELayer(planes* self.expansion, reduction)
         #
         self.downsample = downsample
         self.stride = stride
@@ -138,14 +138,38 @@ class SEBottleneck(nn.Module):
         return out
 
 
-def se_resnet(arch):
+def se_resnet(arch, activation='relu'):
     all_arch = {'SEresnet18': (SEBasicBlock, [2, 2, 2, 2]),
                 'SEresnet34': (SEBasicBlock, [3, 4, 6, 3]),
                 'SEresnet50': (SEBottleneck, [3, 4, 6, 3]),
                 'SEresnet101': (SEBottleneck, [3, 4, 23, 3]),
                 'SEresnet152': (SEBottleneck, [3, 8, 36, 3]),
                 'SEresnext50_32x4d': (SEBottleneck, [3, 4, 6, 3])}
-    return models.ResNet(all_arch[arch][0], all_arch[arch][1])
+
+    if activation == 'relu':
+        return models.ResNet(all_arch[arch][0], all_arch[arch][1])
+    elif activation == 'swish':
+        model = models.ResNet(all_arch[arch][0], all_arch[arch][1])
+        return activate_model(model, swish())
+    elif activation == 'mish':
+        model = models.ResNet(all_arch[arch][0], all_arch[arch][1])
+        return activate_model(model, mish())
+
+def activate_model(model, activation):
+    model.relu = activation
+    for layer in model.layer1:
+        layer.relu = activation
+        layer.se.fc[1] = activation
+    for layer in model.layer2:
+        layer.relu = activation
+        layer.se.fc[1] = activation
+    for layer in model.layer3:
+        layer.relu = activation
+        layer.se.fc[1] = activation
+    for layer in model.layer4:
+        layer.relu = activation
+        layer.se.fc[1] = activation
+    return model
 
 if __name__ == '__main__':
     model = BengaliModel(se_resnet('SEresnet50'))
