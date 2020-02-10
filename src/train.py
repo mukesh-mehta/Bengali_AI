@@ -30,7 +30,7 @@ def train(parque_file_path,
     print("train", train_labels.shape, "Val", val_labels.shape)
     train_loader = torch.utils.data.DataLoader(ImageLoader(train_labels, train_images), batch_size=batch_size, shuffle=True, num_workers=8)
     val_loader = torch.utils.data.DataLoader(ImageLoader(val_labels, val_images), batch_size=batch_size, shuffle=True, num_workers=8)
-    model = BengaliModel(se_resnet('SEresnet50')).to(device)
+    model = BengaliModel(se_resnet('SEresnet18')).to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     # criterion =  nn.CrossEntropyLoss()
