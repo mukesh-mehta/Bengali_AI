@@ -6,10 +6,9 @@ from utils import log_writer
 from torch import nn
 from tqdm import tqdm
 from loader import ImageLoader
-from model import BengaliModel
+from model import BengaliModel, se_resnet
 from torch.utils.tensorboard import SummaryWriter
 from sklearn.model_selection import train_test_split
-from torchvision import models
 
 n_grapheme = 168
 n_vowel = 11
@@ -24,14 +23,14 @@ def train(parque_file_path,
           device,
           batch_size=32,
           epochs=10):
-    writer = SummaryWriter('/media/mukesh/36AD331451677000/bengali_ai/runs/{}'.format(int(time.time())))
+    writer = SummaryWriter('../runs')#'/media/mukesh/36AD331451677000/bengali_ai/runs/{}'.format(int(time.time())))
     labels_df = pd.read_csv(train_csv)[['grapheme_root', 'vowel_diacritic', 'consonant_diacritic']]
     image_df = pd.concat([pd.read_parquet(parque_file) for parque_file in parque_file_path])
     train_labels, val_labels, train_images, val_images = train_test_split(labels_df, image_df, test_size=0.1, random_state=11,stratify=labels_df[['grapheme_root', 'vowel_diacritic', 'consonant_diacritic']])
     print("train", train_labels.shape, "Val", val_labels.shape)
     train_loader = torch.utils.data.DataLoader(ImageLoader(train_labels, train_images), batch_size=batch_size, shuffle=True, num_workers=8)
     val_loader = torch.utils.data.DataLoader(ImageLoader(val_labels, val_images), batch_size=batch_size, shuffle=True, num_workers=8)
-    model = BengaliModel(models.resnet34(pretrained=False)).to(device)
+    model = BengaliModel(se_resnet('SEresnet50')).to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     # criterion =  nn.CrossEntropyLoss()
@@ -100,4 +99,4 @@ def evaluate(loader, model, criterion, device):
 
 # def evaluate(loader, model, loss_func, device, checkpoint=None, weights=None): grapheme_root    vowel_diacritic consonant_diacritic
 train(["../data/bengaliai-cv19/train_image_data_{}.parquet".format(i) for i in range(4)],
-      "../data/bengaliai-cv19/train.csv","resnet18", '../','cuda')
+      "../data/bengaliai-cv19/train.csv","resnet18", '../','cpu')
