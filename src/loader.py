@@ -1,10 +1,11 @@
 import numpy as np
 from torch.utils import data
 from torchvision import transforms
+from utils import strong_aug
 
 
 class ImageLoader(data.Dataset):
-    def __init__(self, labels_df, image_df, is_test=False, transform=transforms.Compose([transforms.ToTensor()])):
+    def __init__(self, labels_df, image_df, is_test=False, transform=strong_aug()):
         self.is_test = is_test
         self.transform = transform
         if not self.is_test:
@@ -18,12 +19,13 @@ class ImageLoader(data.Dataset):
         if index not in range(0, self.image_df.shape[0]):
             return self.__getitem__(np.random.randint(0, self.__len__()))
 
-        image = np.repeat(self.image_df.iloc[index].values[1:].reshape(-1, 137, 236).astype(int), 3, 0)
+        image = np.repeat(self.image_df.iloc[index].values[1:].reshape(137, 236, -1).astype('uint8'), 3, 2)#.reshape(-1, 137, 236)
         # image = self.image_df.iloc[index].values[1:].reshape(-1, 137, 236).astype(int)
         if self.transform:
-            image = self.transform(image)
+            augmented = self.transform(image=image)
+            image = augmented['image']
         if self.is_test is True:
             return image
         else:
             labels = self.labels_df[index]
-            return image, labels
+            return image.reshape(-1, 137, 236), labels

@@ -40,7 +40,7 @@ def train(parque_file_path,
         loss = 0
         for img, labels in tqdm(train_loader):
             optimizer.zero_grad()
-            img = img.type(torch.FloatTensor).permute(0, 2, 3, 1).to(device)
+            img = img.type(torch.FloatTensor).to(device)
             labels = labels.type(torch.LongTensor).to(device)
             grapheme_preds, vowel_preds, consonant_preds = model(img)
             loss_grapheme = nn.CrossEntropyLoss(weight=None)(grapheme_preds, labels[:,0])
@@ -85,7 +85,7 @@ def evaluate(loader, model, criterion, device):
     acc_vowel = 0
     acc_consonant = 0
     for img, labels in loader:
-        img = img.type(torch.FloatTensor).permute(0, 2, 3, 1).to(device)
+        img = img.type(torch.FloatTensor).to(device)
         labels = labels.type(torch.LongTensor).to(device)
         grapheme_preds, vowel_preds, consonant_preds = model(img)
         loss_grapheme.append(criterion(grapheme_preds, labels[:,0]).item())

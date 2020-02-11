@@ -1,6 +1,14 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
+from albumentations import (
+    HorizontalFlip, IAAPerspective, ShiftScaleRotate, CLAHE, RandomRotate90,
+    Transpose, ShiftScaleRotate, Blur, OpticalDistortion, GridDistortion, HueSaturationValue,
+    IAAAdditiveGaussianNoise, GaussNoise, MotionBlur, MedianBlur, RandomBrightnessContrast, IAAPiecewiseAffine,
+    IAASharpen, IAAEmboss, Flip, OneOf, Compose
+)
+from albumentations.pytorch import ToTensor
+
 
 def log_writer(writer, logs, step):
     for key, val in logs.items():
@@ -45,3 +53,29 @@ class swish(nn.Module):
 
     def forward(self, input):
         return f_swish(input)
+
+
+def strong_aug(p=.5):
+    return Compose([
+        OneOf([
+            IAAAdditiveGaussianNoise(),
+            GaussNoise(),
+        ], p=0.2),
+        OneOf([
+            MotionBlur(p=.2),
+            MedianBlur(blur_limit=3, p=0.1),
+            Blur(blur_limit=3, p=0.1),
+        ], p=0.2),
+        ShiftScaleRotate(shift_limit=0.0625, scale_limit=0.2, rotate_limit=10, p=0.2),
+        OneOf([
+            OpticalDistortion(p=0.3),
+            GridDistortion(p=.1),
+            IAAPiecewiseAffine(p=0.3),
+        ], p=0.2),
+        OneOf([
+            IAASharpen(),
+            IAAEmboss(),
+            RandomBrightnessContrast(),            
+        ], p=0.3),
+        ToTensor()
+    ], p=p)
