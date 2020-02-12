@@ -13,76 +13,81 @@ from sklearn.model_selection import train_test_split
 n_grapheme = 168
 n_vowel = 11
 n_consonant = 7
-EVAL_STEP = 2
+EVAL_STEP = 1000
 CUDA_LAUNCH_BLOCKING=1
 
-def train(parque_file_path,
-          train_csv,
-          model_name,
-          model_out_path,
-          device,
-          batch_size=32,
-          epochs=10):
-    writer = SummaryWriter('../runs')#'/media/mukesh/36AD331451677000/bengali_ai/runs/{}'.format(int(time.time())))
+def train_model(parque_file_path, train_csv, model_name, model_out_path, device, logs_path, batch_size=32, epochs=10):
+    writer = SummaryWriter(logs_path)
     labels_df = pd.read_csv(train_csv)[['grapheme_root', 'vowel_diacritic', 'consonant_diacritic']]
     image_df = pd.concat([pd.read_parquet(parque_file) for parque_file in parque_file_path])
     train_labels, val_labels, train_images, val_images = train_test_split(labels_df, image_df, test_size=0.1, random_state=11,stratify=labels_df[['grapheme_root', 'vowel_diacritic', 'consonant_diacritic']])
     print("train", train_labels.shape, "Val", val_labels.shape)
     train_loader = torch.utils.data.DataLoader(ImageLoader(train_labels, train_images), batch_size=batch_size, shuffle=True, num_workers=8)
     val_loader = torch.utils.data.DataLoader(ImageLoader(val_labels, val_images), batch_size=batch_size, shuffle=True, num_workers=8)
-    model = BengaliModel(se_resnet('SEresnet18', activation='mish')).to(device)
+    model = BengaliModel(se_resnet(model_name, activation='relu')).to(device)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.01, amsgrad=False)
     # scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0.0001, max_lr=0.01, step_size_up=5)
-    # criterion =  nn.CrossEntropyLoss()
-    global_step = 0
-    model.train()
+    criterion =  nn.CrossEntropyLoss()
     best_loss = 10.0
     for epoch in range(epochs):
-        tr_loss = 0
-        for img, labels in tqdm(train_loader):
-            optimizer.zero_grad()
-            img = img.type(torch.FloatTensor).to(device)
-            labels = labels.type(torch.LongTensor).to(device)
-            grapheme_preds, vowel_preds, consonant_preds = model(img)
-            loss_grapheme = nn.CrossEntropyLoss(weight=None)(grapheme_preds, labels[:,0])
-            loss_vowel = nn.CrossEntropyLoss(weight=None)(vowel_preds, labels[:,1])
-            loss_consonant = nn.CrossEntropyLoss(weight=None)(consonant_preds, labels[:,2])
-            total_loss = loss_grapheme+loss_vowel+loss_consonant
-            total_loss.backward(retain_graph=True)
-            optimizer.step()
-            # scheduler.step()
-            global_step += 1
-            tr_loss += total_loss.item()
-            acc_grapheme = (grapheme_preds.argmax(1) == labels[:, 0]).float().mean()
-            acc_vowel = (vowel_preds.argmax(1) == labels[:, 1]).float().mean()
-            acc_consonant = (consonant_preds.argmax(1) == labels[:, 2]).float().mean()
-            acc = (acc_grapheme+acc_vowel+acc_consonant)/3
-            if global_step % EVAL_STEP == 0:
-                step_count = global_step/EVAL_STEP
-                writer.add_scalar('Loss/train', total_loss.item(), step_count)
-                writer.add_scalar('Loss/train/grapheme', loss_grapheme.item(), step_count)
-                writer.add_scalar('Loss/train/vowel', loss_vowel.item(), step_count)
-                writer.add_scalar('Loss/train/consonant', loss_consonant.item(), step_count)
-                writer.add_scalar('Acc/train', acc, step_count)
-                writer.add_scalar('Acc/train/grapheme', acc_grapheme, step_count)
-                writer.add_scalar('Acc/train/vowel', acc_vowel, step_count)
-                writer.add_scalar('Acc/train/consonant', acc_consonant, step_count)
-                vl_grapheme, vl_vowel, vl_consonant, va_grapheme, va_vowel, va_consonant = evaluate(val_loader, model, nn.CrossEntropyLoss(), device)
-                val_loss = vl_grapheme + vl_vowel + vl_consonant
-                writer.add_scalar('Loss/val', vl_grapheme+vl_vowel+vl_consonant, step_count)
-                writer.add_scalar('Loss/val/grapheme', vl_grapheme, step_count)
-                writer.add_scalar('Loss/val/vowel', vl_vowel, step_count)
-                writer.add_scalar('Loss/val/consonant', vl_consonant, step_count)
-                writer.add_scalar('Acc/val', (va_grapheme+va_vowel+va_consonant)/3, step_count)
-                writer.add_scalar('Acc/val/grapheme', va_grapheme, step_count)
-                writer.add_scalar('Acc/val/vowel', va_vowel, step_count)
-                writer.add_scalar('Acc/val/consonant', va_consonant, step_count)
-                writer.close()
-                if val_loss < best_loss:
-                    torch.save(model.state_dict(), model_out_path)
-                    best_loss = val_loss
-        print(tr_loss/len(train_loader))
+        model, optimizer, loss_grapheme, loss_vowel, loss_consonant, acc_grapheme, acc_vowel, acc_consonant = train(train_loader, model, criterion, device, optimizer, scheduler=None)
+        total_loss = loss_grapheme+loss_vowel+loss_consonant
+        torch.cuda.empty_cache()
+        writer.add_scalar('Loss/train', total_loss, epoch)
+        writer.add_scalar('Loss/train/grapheme', loss_grapheme, epoch)
+        writer.add_scalar('Loss/train/vowel', loss_vowel, epoch)
+        writer.add_scalar('Loss/train/consonant', loss_consonant, epoch)
+        writer.add_scalar('Acc/train', (acc_grapheme+acc_vowel+acc_consonant)/3)
+        writer.add_scalar('Acc/train/grapheme', acc_grapheme, epoch)
+        writer.add_scalar('Acc/train/vowel', acc_vowel, epoch)
+        writer.add_scalar('Acc/train/consonant', acc_consonant, epoch)
+        vl_grapheme, vl_vowel, vl_consonant, va_grapheme, va_vowel, va_consonant = evaluate(val_loader, model, nn.CrossEntropyLoss(), device)
+        torch.cuda.empty_cache()
+        val_loss = vl_grapheme + vl_vowel + vl_consonant
+        writer.add_scalar('Loss/val', vl_grapheme+vl_vowel+vl_consonant, epoch)
+        writer.add_scalar('Loss/val/grapheme', vl_grapheme, epoch)
+        writer.add_scalar('Loss/val/vowel', vl_vowel, epoch)
+        writer.add_scalar('Loss/val/consonant', vl_consonant, epoch)
+        writer.add_scalar('Acc/val', (va_grapheme+va_vowel+va_consonant)/3, epoch)
+        writer.add_scalar('Acc/val/grapheme', va_grapheme, epoch)
+        writer.add_scalar('Acc/val/vowel', va_vowel, epoch)
+        writer.add_scalar('Acc/val/consonant', va_consonant, epoch)
+        writer.close()
+        if val_loss < best_loss:
+            torch.save(model.state_dict(), model_out_path)
+            best_loss = val_loss
+        
+
+def train(loader, model, criterion, device, optimizer, scheduler=None):
+    rloss_grapheme = []
+    rloss_vowel = []
+    rloss_consonant = []
+    acc_grapheme = 0
+    acc_vowel = 0
+    acc_consonant = 0
+    model.train()
+    for img, labels in tqdm(loader):
+        optimizer.zero_grad()
+        img = img.type(torch.FloatTensor).to(device)
+        labels = labels.type(torch.LongTensor).to(device)
+        grapheme_preds, vowel_preds, consonant_preds = model(img)
+        loss_grapheme = criterion(grapheme_preds, labels[:,0])
+        loss_vowel = criterion(vowel_preds, labels[:,1])
+        loss_consonant = criterion(consonant_preds, labels[:,2])
+        total_loss = loss_grapheme+loss_vowel+loss_consonant
+        total_loss.backward(retain_graph=True)
+        optimizer.step()
+        if scheduler:
+            scheduler.step()
+        rloss_grapheme.append(loss_grapheme.item())
+        rloss_vowel.append(loss_vowel.item())
+        rloss_consonant.append(loss_consonant.item())
+        acc_grapheme += (grapheme_preds.argmax(1) == labels[:, 0]).float().mean()
+        acc_vowel += (vowel_preds.argmax(1) == labels[:, 1]).float().mean()
+        acc_consonant += (consonant_preds.argmax(1) == labels[:, 2]).float().mean()
+    return model, optimizer, np.mean(rloss_grapheme), np.mean(rloss_vowel), np.mean(rloss_consonant), acc_grapheme/len(loader), acc_vowel/len(loader), acc_consonant/len(loader)
+
 
 def evaluate(loader, model, criterion, device):
     loss_grapheme = []
@@ -91,7 +96,8 @@ def evaluate(loader, model, criterion, device):
     acc_grapheme = 0
     acc_vowel = 0
     acc_consonant = 0
-    for img, labels in loader:
+    model.eval()
+    for img, labels in tqdm(loader):
         img = img.type(torch.FloatTensor).to(device)
         labels = labels.type(torch.LongTensor).to(device)
         grapheme_preds, vowel_preds, consonant_preds = model(img)
@@ -104,5 +110,7 @@ def evaluate(loader, model, criterion, device):
     return np.mean(loss_grapheme), np.mean(loss_vowel), np.mean(loss_consonant), acc_grapheme/len(loader), acc_vowel/len(loader), acc_consonant/len(loader)
 
 
-train(["../data/bengaliai-cv19/train_image_data_{}.parquet".format(i) for i in range(4)],
-      "../data/bengaliai-cv19/train.csv","resnet18", '../model.pt','cpu')
+if __name__ == '__main__':
+    train_model(["../data/bengaliai-cv19/train_image_data_{}.parquet".format(i) for i in range(4)],
+      "../data/bengaliai-cv19/train.csv","SEresnet34", '/media/mukesh/36AD331451677000/bengali_ai/models/model.pt','cuda',
+      '/media/mukesh/36AD331451677000/bengali_ai/runs/{}'.format(int(time.time())))
