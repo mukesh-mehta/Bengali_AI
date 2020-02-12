@@ -9,6 +9,8 @@ from loader import ImageLoader
 from model import BengaliModel, se_resnet
 from torch.utils.tensorboard import SummaryWriter
 from sklearn.model_selection import train_test_split
+from efficientnet_pytorch import EfficientNet
+
 
 n_grapheme = 168
 n_vowel = 11
@@ -16,7 +18,7 @@ n_consonant = 7
 EVAL_STEP = 1000
 CUDA_LAUNCH_BLOCKING=1
 
-def train_model(parque_file_path, train_csv, model_name, model_out_path, device, logs_path, batch_size=32, epochs=10):
+def train_model(parque_file_path, train_csv, model_name, model_out_path, device, logs_path, batch_size=16, epochs=10):
     writer = SummaryWriter(logs_path)
     labels_df = pd.read_csv(train_csv)[['grapheme_root', 'vowel_diacritic', 'consonant_diacritic']]
     image_df = pd.concat([pd.read_parquet(parque_file) for parque_file in parque_file_path])
@@ -24,7 +26,8 @@ def train_model(parque_file_path, train_csv, model_name, model_out_path, device,
     print("train", train_labels.shape, "Val", val_labels.shape)
     train_loader = torch.utils.data.DataLoader(ImageLoader(train_labels, train_images), batch_size=batch_size, shuffle=True, num_workers=8)
     val_loader = torch.utils.data.DataLoader(ImageLoader(val_labels, val_images), batch_size=batch_size, shuffle=True, num_workers=8)
-    model = BengaliModel(se_resnet(model_name, activation='relu')).to(device)
+    # model = BengaliModel(se_resnet(model_name, activation='relu')).to(device)
+    model = BengaliModel(EfficientNet.from_name('efficientnet-b1')).to(device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.01, amsgrad=False)
     # scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0.0001, max_lr=0.01, step_size_up=5)
@@ -33,6 +36,7 @@ def train_model(parque_file_path, train_csv, model_name, model_out_path, device,
     for epoch in range(epochs):
         model, optimizer, loss_grapheme, loss_vowel, loss_consonant, acc_grapheme, acc_vowel, acc_consonant = train(train_loader, model, criterion, device, optimizer, scheduler=None)
         total_loss = loss_grapheme+loss_vowel+loss_consonant
+        print("train loss:", total_loss)
         torch.cuda.empty_cache()
         writer.add_scalar('Loss/train', total_loss, epoch)
         writer.add_scalar('Loss/train/grapheme', loss_grapheme, epoch)
